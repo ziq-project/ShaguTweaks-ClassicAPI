@@ -100,3 +100,4 @@ mods\skip-gossip.lua
 
 # compatibility
 compat-dragonflightui.lua
+compat-guda.lua
