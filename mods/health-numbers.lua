@@ -67,12 +67,31 @@ module.enable = function(self)
     self.valueTexts.targetHealth = CreateValueText(TargetFrameHealthBar, 10)
     self.valueTexts.targetMana = CreateValueText(TargetFrameManaBar, 10)
 
+    local petTextParent
+    if PetFrame and (PetFrameHealthBar or PetFrameManaBar) then
+      self.petTextOverlay = CreateFrame("Frame", nil, PetFrame)
+      self.petTextOverlay:SetAllPoints(PetFrame)
+
+      local petTextLevel = PetFrame:GetFrameLevel()
+      if PetFrameHealthBar then
+        petTextLevel = math.max(petTextLevel, PetFrameHealthBar:GetFrameLevel())
+      end
+      if PetFrameManaBar then
+        petTextLevel = math.max(petTextLevel, PetFrameManaBar:GetFrameLevel())
+      end
+
+      -- Keep the text on PetFrame's strata while rendering it above the
+      -- nested pet artwork and status bars.
+      self.petTextOverlay:SetFrameLevel(petTextLevel + 5)
+      petTextParent = self.petTextOverlay
+    end
+
     if PetFrameHealthBar then
-      self.valueTexts.petHealth = CreateValueText(PetFrameHealthBar, 9)
+      self.valueTexts.petHealth = CreateValueText(petTextParent or PetFrameHealthBar, 9)
     end
 
     if PetFrameManaBar then
-      self.valueTexts.petMana = CreateValueText(PetFrameManaBar, 9)
+      self.valueTexts.petMana = CreateValueText(petTextParent or PetFrameManaBar, 9)
     end
 
     if _G.PlayerFrameAlternatePowerBar then
