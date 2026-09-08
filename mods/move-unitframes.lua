@@ -8,7 +8,7 @@ local API = ShaguTweaks.API
 
 local module = ShaguTweaks:register({
   title = T["Movable Unit Frames"],
-  description = T["Player, Target, Party, Minimap, Clock, Timer, Buffs, Weapon Buffs and Debuffs can be moved while <Shift> and <Ctrl> are pressed together."],
+  description = T["Player, Target, Party, Minimap, Clock, Timer, Buffs, Weapon Buffs and Debuffs can be moved while <Shift> and <Ctrl> are pressed together. Right-click a frame to reset its position."],
   expansions = { ["vanilla"] = true },
   category = T["Unit Frames"],
   enabled = true,
@@ -54,24 +54,73 @@ module.enable = function(self)
 
   local unlocked = false
   local states = {}
+  local defaultPoints = {}
   local grid
 
   -- Player/Target keep the original ShaguTweaks user-placed behavior.
   -- The formerly-Extended frames use ShaguTweaks_config so their positions
-  -- survive reload/relog consistently.
+  -- survive reload/relog consistently. defaultPoint is only a fallback for
+  -- frames whose live pre-move anchor cannot be recovered (for example a
+  -- layout-cache position restored before addons load).
   local targets = {
-    { name = "PlayerFrame", clamp = true, persist = false },
-    { name = "TargetFrame", clamp = true, persist = false },
-    { name = "PartyMemberFrame1", persist = true },
-    { name = "PartyMemberFrame2", persist = true },
-    { name = "PartyMemberFrame3", persist = true },
-    { name = "PartyMemberFrame4", persist = true },
-    { name = "Minimap", moveParent = true, persist = true, clamp = true },
-    { name = "MinimapClock", persist = true, clamp = true, manualGroup = "clock", suppressMouseDown = true },
-    { name = "MinimapTimer", persist = true, clamp = true, manualGroup = "timer" },
-    { name = "BuffButton0", persist = true, manualGroup = "buffs", cursorDrag = true },
-    { name = "BuffButton32", persist = true, manualGroup = "debuffs", cursorDrag = true },
-    { name = "TempEnchant1", persist = true, manualGroup = "weapon", cursorDrag = true },
+    {
+      name = "PlayerFrame", clamp = true, persist = false,
+      defaultPoint = { "TOPLEFT", "UIParent", "TOPLEFT", -19, -4 },
+      defaultUnclamped = true,
+    },
+    {
+      name = "TargetFrame", clamp = true, persist = false,
+      defaultPoint = { "TOPLEFT", "UIParent", "TOPLEFT", 250, -4 },
+      defaultUnclamped = true,
+    },
+    {
+      name = "PartyMemberFrame1", persist = true,
+      defaultPoint = { "TOPLEFT", "UIParent", "TOPLEFT", 10, -128 },
+    },
+    {
+      name = "PartyMemberFrame2", persist = true,
+      defaultPoint = { "TOPLEFT", "PartyMemberFrame1PetFrame", "BOTTOMLEFT", -23, -10 },
+    },
+    {
+      name = "PartyMemberFrame3", persist = true,
+      defaultPoint = { "TOPLEFT", "PartyMemberFrame2PetFrame", "BOTTOMLEFT", -23, -10 },
+    },
+    {
+      name = "PartyMemberFrame4", persist = true,
+      defaultPoint = { "TOPLEFT", "PartyMemberFrame3PetFrame", "BOTTOMLEFT", -23, -10 },
+    },
+    {
+      name = "Minimap", moveParent = true, persist = true, clamp = true,
+      defaultPoint = { "TOPRIGHT", "UIParent", "TOPRIGHT", 0, 0 },
+    },
+    {
+      name = "MinimapClock", persist = true, clamp = true,
+      manualGroup = "clock", suppressMouseDown = true,
+      defaultPoint = { "BOTTOM", "MinimapCluster", "BOTTOM", 8, 18 },
+    },
+    {
+      -- MiniMap Clock already owns Ctrl+Shift+RightClick for the timer and
+      -- resets both its value and its position, so keep that native handler.
+      name = "MinimapTimer", persist = true, clamp = true,
+      manualGroup = "timer", nativeReset = true,
+      defaultPoint = { "TOP", "MinimapClock", "BOTTOM", 0, 0 },
+    },
+    {
+      name = "BuffButton0", persist = true, manualGroup = "buffs",
+      cursorDrag = true, refreshAuras = true,
+      defaultPoint = { "TOPRIGHT", "BuffFrame", "TOPRIGHT", 0, 0 },
+    },
+    {
+      -- Turtle WoW dynamically positions the first debuff row, so let its
+      -- own BuffButtons_UpdatePositions() rebuild the natural relationship.
+      name = "BuffButton32", persist = true, manualGroup = "debuffs",
+      cursorDrag = true, auraRowReset = true,
+    },
+    {
+      name = "TempEnchant1", persist = true, manualGroup = "weapon",
+      cursorDrag = true, refreshAuras = true,
+      defaultPoint = { "TOPRIGHT", "TemporaryEnchantFrame", "TOPRIGHT", 0, 0 },
+    },
   }
 
   local function Resolve(target)
@@ -93,6 +142,65 @@ module.enable = function(self)
     return target.name
   end
 
+  local function CapturePoints(frame)
+    if not frame or not frame.GetPoint then return end
+
+    local count = frame.GetNumPoints and frame:GetNumPoints() or 1
+    local points = {}
+
+    for i = 1, count do
+      local point, relativeTo, relativePoint, x, y = frame:GetPoint(i)
+      if point then
+        table.insert(points, {
+          point,
+          relativeTo,
+          relativePoint,
+          x or 0,
+          y or 0,
+        })
+      end
+    end
+
+    if table.getn(points) > 0 then return points end
+  end
+
+  local function CaptureDefault(target)
+    local _, moveFrame = Resolve(target)
+    if not moveFrame then return end
+
+    local key = PositionKey(target, moveFrame)
+    if target.persist and movedb[key] ~= nil then return end
+
+    -- A user-placed frame may already have been restored by layout-cache before
+    -- addon initialization. Do not mistake that old custom position for default.
+    if moveFrame.IsUserPlaced and moveFrame:IsUserPlaced() then return end
+
+    defaultPoints[target.name] = CapturePoints(moveFrame)
+  end
+
+  local function ApplyCapturedPoints(frame, points)
+    if not frame or not points or table.getn(points) == 0 then return false end
+
+    frame:ClearAllPoints()
+    for _, point in ipairs(points) do
+      frame:SetPoint(point[1], point[2], point[3], point[4], point[5])
+    end
+
+    return true
+  end
+
+  local function ApplyNamedDefault(target, frame)
+    local point = target.defaultPoint
+    if not point or not frame then return false end
+
+    local relativeTo = point[2] and _G[point[2]] or nil
+    if point[2] and not relativeTo then return false end
+
+    frame:ClearAllPoints()
+    frame:SetPoint(point[1], relativeTo, point[3], point[4] or 0, point[5] or 0)
+    return true
+  end
+
   local function SetDragging(target, value)
     if target.manualGroup then
       sharedState.dragging[target.manualGroup] = value and true or false
@@ -102,6 +210,13 @@ module.enable = function(self)
   local function MarkManual(target)
     if target.manualGroup then
       sharedState.manual[target.manualGroup] = true
+    end
+  end
+
+  local function ClearManual(target)
+    if target.manualGroup then
+      sharedState.manual[target.manualGroup] = false
+      sharedState.dragging[target.manualGroup] = false
     end
   end
 
@@ -185,6 +300,57 @@ module.enable = function(self)
     cursorDrag.moveFrame = nil
   end
 
+  local function ResetTarget(state, target, moveFrame)
+    if not moveFrame then
+      local _, resolved = Resolve(target)
+      moveFrame = resolved
+    end
+    if not moveFrame then return end
+
+    if target.cursorDrag and state then StopCursorDrag(state) end
+
+    if target.persist then
+      movedb[PositionKey(target, moveFrame)] = nil
+    end
+    ClearManual(target)
+
+    if not target.cursorDrag and moveFrame.SetUserPlaced then
+      moveFrame:SetUserPlaced(false)
+    end
+
+    local restored = ApplyCapturedPoints(moveFrame, defaultPoints[target.name])
+
+    if not restored and target.auraRowReset then
+      moveFrame:ClearAllPoints()
+      if BuffButtons_UpdatePositions then
+        BuffButtons_UpdatePositions()
+        restored = true
+      end
+    end
+
+    if not restored then
+      if target.defaultUnclamped and moveFrame.SetClampedToScreen then
+        moveFrame:SetClampedToScreen(false)
+      end
+      restored = ApplyNamedDefault(target, moveFrame)
+    end
+
+    if target.refreshAuras and BuffButtons_UpdatePositions then
+      BuffButtons_UpdatePositions()
+    end
+
+    if target.name == "Minimap" and ShaguTweaks.ScheduleMinimapClamp then
+      ShaguTweaks.ScheduleMinimapClamp()
+    end
+
+    if state then
+      state.dragged = false
+      state.reset = true
+      state.suppressRightClick = true
+      state.userPlaced = false
+    end
+  end
+
   cursorDrag:SetScript("OnUpdate", function()
     local state = this.state
     local target = this.target
@@ -261,13 +427,19 @@ module.enable = function(self)
 
     state.active = true
     state.dragged = false
+    state.reset = false
+    state.suppressRightClick = false
     state.handle = handle
     state.moveFrame = moveFrame
     state.onDragStart = handle:GetScript("OnDragStart")
     state.onDragStop = handle:GetScript("OnDragStop")
-    if target.suppressMouseDown then
-      state.onMouseDown = handle:GetScript("OnMouseDown")
-      handle:SetScript("OnMouseDown", nil)
+    state.onMouseDown = handle:GetScript("OnMouseDown")
+    state.onMouseUp = handle:GetScript("OnMouseUp")
+    state.hasClick = handle.RegisterForClicks and true or false
+    if state.hasClick then
+      state.onClick = handle:GetScript("OnClick")
+    else
+      state.onClick = nil
     end
 
     if handle.IsMouseEnabled then
@@ -300,8 +472,43 @@ module.enable = function(self)
     handle:EnableMouse(true)
     handle:RegisterForDrag("LeftButton")
 
+    -- While Ctrl+Shift mode owns the frame, Ctrl+Shift+RightClick resets only
+    -- that frame and swallows its normal right-click action (unit menu, buff
+    -- cancel, minimap zoom, etc.). MiniMap Timer keeps its own native reset.
+    if not target.nativeReset then
+      handle:SetScript("OnMouseDown", function()
+        if arg1 == "RightButton" then
+          state.suppressRightClick = true
+          ResetTarget(state, target, moveFrame)
+          return
+        end
+
+        state.suppressRightClick = false
+        if not target.suppressMouseDown and state.onMouseDown then
+          state.onMouseDown()
+        end
+      end)
+
+      handle:SetScript("OnMouseUp", function()
+        if arg1 == "RightButton" and state.suppressRightClick then return end
+        if state.onMouseUp then state.onMouseUp() end
+      end)
+
+      if state.hasClick then
+        handle:SetScript("OnClick", function()
+          if arg1 == "RightButton" and state.suppressRightClick then
+            state.suppressRightClick = false
+            return
+          end
+
+          if state.onClick then state.onClick() end
+        end)
+      end
+    end
+
     handle:SetScript("OnDragStart", function()
       state.dragged = true
+      state.reset = false
       MarkManual(target)
       SetDragging(target, true)
 
@@ -353,12 +560,24 @@ module.enable = function(self)
         SavePosition(target, moveFrame)
       end
 
+      -- MiniMap Timer has its own Ctrl+Shift reset path. Detect its
+      -- SetUserPlaced(false) so releasing the modifiers does not undo it.
+      if target.nativeReset
+        and not state.dragged
+        and state.userPlaced
+        and moveFrame.IsUserPlaced
+        and not moveFrame:IsUserPlaced() then
+        state.reset = true
+        state.userPlaced = false
+      end
+
       -- Restore UserPlaced while the frame is still temporarily movable.
       -- Some Vanilla/Turtle frames (notably MinimapCluster) reject
       -- SetUserPlaced() after SetMovable(false), which caused repeated
       -- "not movable or resizable" errors when releasing Ctrl+Shift.
       if not target.cursorDrag
         and not state.dragged
+        and not state.reset
         and state.userPlaced ~= nil
         and moveFrame.SetUserPlaced then
         moveFrame:SetUserPlaced(state.userPlaced)
@@ -372,8 +591,13 @@ module.enable = function(self)
     if handle then
       handle:SetScript("OnDragStart", state.onDragStart)
       handle:SetScript("OnDragStop", state.onDragStop)
-      if target.suppressMouseDown then
+
+      if not target.nativeReset then
         handle:SetScript("OnMouseDown", state.onMouseDown)
+        handle:SetScript("OnMouseUp", state.onMouseUp)
+        if state.hasClick then
+          handle:SetScript("OnClick", state.onClick)
+        end
       end
 
       if state.mouseEnabled ~= nil then
@@ -443,7 +667,11 @@ module.enable = function(self)
     end)
   end
 
+  -- Capture clean pre-move anchors before this module applies any saved
+  -- positions. This preserves compatible addon/Turtle layouts when possible.
   for _, target in ipairs(targets) do
+    CaptureDefault(target)
+
     if target.clamp then
       local _, moveFrame = Resolve(target)
       if moveFrame and moveFrame.SetClampedToScreen then
