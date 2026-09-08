@@ -82,13 +82,13 @@ module.enable = function(self)
   end
 
   local function PositionTexts()
-    local playerHealthY = PlayerFrameHealthBar:GetHeight() >= 20 and -7 or 0
-    local targetHealthY = TargetFrameHealthBar:GetHeight() >= 20 and -7 or 0
+    local playerHealthY = PlayerFrameHealthBar:GetHeight() >= 20 and -7 or 0.5
+    local targetHealthY = TargetFrameHealthBar:GetHeight() >= 20 and -7 or 0.5
 
     AnchorText(self.valueTexts.playerHealth, PlayerFrameHealthBar, playerHealthY)
-    AnchorText(self.valueTexts.playerMana, PlayerFrameManaBar, 0)
+    AnchorText(self.valueTexts.playerMana, PlayerFrameManaBar, 0.5)
     AnchorText(self.valueTexts.targetHealth, TargetFrameHealthBar, targetHealthY)
-    AnchorText(self.valueTexts.targetMana, TargetFrameManaBar, 0)
+    AnchorText(self.valueTexts.targetMana, TargetFrameManaBar, 0.5)
     AnchorText(self.valueTexts.petHealth, PetFrameHealthBar, 0)
     AnchorText(self.valueTexts.petMana, PetFrameManaBar, -2)
 
