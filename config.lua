@@ -325,6 +325,54 @@ settings.load = function(self)
       end
     end
 
+    -- render boolean sub-options declared by modules in this category.
+    -- Same idea as the slider loop above, but for a plain on/off toggle
+    -- that lives INSIDE a module that's already its own single on/off
+    -- entry (e.g. one specific behavior within "Chat Tweaks", which bundles
+    -- several unrelated features under one master checkbox). Added
+    -- 2026-09-10 for exactly that case -- see chat-tweaks.lua's
+    -- "chattweaks.itemtooltip" checkbox.
+    local checkboxHeight = 24
+    for title, smod in ShaguTweaks.spairs(entries) do
+      if smod.checkboxes then
+        for cidx, cdef in ipairs(smod.checkboxes) do
+          local checkboxKey = "checkbox:" .. cdef.key
+          local safeName = "AdvancedSettingsGUICheckbox" .. string.gsub(cdef.key, "[^%w]", "_")
+
+          if not settings.entries[checkboxKey] then
+            settings.entries[checkboxKey] = CreateFrame("CheckButton", safeName, settings.category[category], "OptionsCheckButtonTemplate")
+            settings.entries[checkboxKey]:SetHeight(24)
+            settings.entries[checkboxKey]:SetWidth(24)
+          end
+
+          local checkbox = settings.entries[checkboxKey]
+          settings.category[category].buttons[checkbox] = true
+
+          local yOffset = -(height + spacing / 2 + 16 + (cidx - 1) * checkboxHeight)
+          checkbox:ClearAllPoints()
+          checkbox:SetPoint("TOPLEFT", settings.category[category], "TOPLEFT", 17, yOffset)
+
+          local curVal = current_config.overwrites and current_config.overwrites[cdef.key]
+          if curVal == nil then
+            curVal = ShaguTweaks_config.overwrites and ShaguTweaks_config.overwrites[cdef.key]
+          end
+          if curVal == nil then curVal = cdef.default end
+          checkbox:SetChecked(curVal and true or nil)
+
+          local text = _G[safeName .. "Text"]
+          if text then text:SetText(cdef.label or cdef.key) end
+
+          local key = cdef.key
+          checkbox:SetScript("OnClick", function()
+            current_config.overwrites = current_config.overwrites or {}
+            current_config.overwrites[key] = this:GetChecked() and true or false
+          end)
+
+          height = height + checkboxHeight
+        end
+      end
+    end
+
     collapse(settings.category[category], true)
 
     height = height + spacing
@@ -368,6 +416,13 @@ settings.defaults = function()
     if mod.config then
       for k, v in pairs(mod.config) do
         current_config.overwrites[k] = v
+      end
+    end
+    -- ...and boolean sub-option checkboxes (see the checkbox render loop
+    -- in settings.load above).
+    if mod.checkboxes then
+      for _, cdef in ipairs(mod.checkboxes) do
+        current_config.overwrites[cdef.key] = cdef.default
       end
     end
   end

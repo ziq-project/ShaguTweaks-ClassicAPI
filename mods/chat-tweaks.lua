@@ -13,6 +13,13 @@ local module = ShaguTweaks:register({
   category = T["Chat & Social"],
   enabled = true,
   order = 60,
+  -- Reported (2026-09-10): players wanted to turn off just the item/quest
+  -- tooltip preview on chat-link hover without losing the rest of Chat
+  -- Tweaks (scrolling, sticky channels, URL links, etc. -- all one master
+  -- checkbox otherwise). See the OnHyperlinkEnter guard below.
+  checkboxes = {
+    { key = "chattweaks.itemtooltip", label = T["Show Item/Quest Tooltip On Chat Link Hover"], default = true },
+  },
 })
 
 -- ============================================================
@@ -333,6 +340,16 @@ module.enable = function(self)
     end)
   end
 
+  -- Defaults to on (matches the checkbox's own "default = true") so an
+  -- absent/unset overwrite (fresh install, or a saved file from before this
+  -- option existed) keeps today's behavior instead of silently disabling.
+  local function IsItemTooltipEnabled()
+    local v = ShaguTweaks_config and ShaguTweaks_config.overwrites
+      and ShaguTweaks_config.overwrites["chattweaks.itemtooltip"]
+    if v == nil then return true end
+    return v and true or false
+  end
+
   -- --------------------------------------------------------
   -- Per-frame hooks: history + CLINK cleanup + URLs
   -- --------------------------------------------------------
@@ -396,6 +413,10 @@ module.enable = function(self)
       -- Add item and quest previews without discarding Turtle or addon handlers.
       chatFrame:SetScript("OnHyperlinkEnter", function()
         local _, _, linktype = string.find(arg1, "^(.-):(.+)$")
+        if (linktype == "item" or linktype == "quest") and not IsItemTooltipEnabled() then
+          if baseHyperlinkEnter then baseHyperlinkEnter() end
+          return
+        end
         if linktype == "item" then
           ClearPendingQuest(this)
           this.ShaguTweaksItemTooltip = true
