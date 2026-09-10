@@ -1,6 +1,6 @@
 ## Interface: 11200
-## Title: |cffffcc00Shagu|cffffffffTweaks |cffcccccc[ClassicAPI]
-## Author: Shagu
+## Title: |cffffcc00Shagu|cffffffffTweaks |cffcccccc[ClassicAPI]|cff7fff7f - Project Legacy|r
+## Author: Shagu | a Project Legacy fork by ziq
 ## Notes: A collection of tweaks and enhancements to the Default UI
 ## Notes-ruRU: Коллекция настроек и улучшений стандартного пользовательского интерфейса.
 ## Version: GIT
