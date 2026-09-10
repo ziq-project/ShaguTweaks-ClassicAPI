@@ -163,12 +163,13 @@ module.enable = function(self)
       return
     end
 
-    if useEstimator and not known and max == 100 then
-      text:SetText(tostring(cur or 0) .. "%")
-      text:Show()
-      return
-    end
-
+    -- Per user request (2026-09-10): target health shows ONLY the current
+    -- HP number -- no "/max", no "%". When useEstimator found a real or
+    -- cache-estimated absolute value (known and max ~= 100), "cur" is that
+    -- absolute HP. Otherwise (fresh target, no estimate yet, or this server
+    -- genuinely never reveals a hostile target's real HP) "cur" is still
+    -- just the raw 0-100 percent -- shown bare, without a "%" sign, exactly
+    -- as requested, even though it isn't a true HP count in that case.
     SetValue(text, cur or 0)
   end
 

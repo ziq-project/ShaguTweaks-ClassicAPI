@@ -76,27 +76,26 @@ local function GetCachedHealth(unitstr, cur, max)
   return cur, max
 end
 
--- ClassicAPI can expose the real health deficit even when stock UnitHealth()
--- still reports a percentage. Use that as an immediate estimate when possible.
--- At 100% there is no deficit to derive a maximum from, so the historical
--- combat estimator/cache remains useful.
-local function GetMissingHealthEstimate(unitstr, cur, max)
-  if max ~= 100 or cur >= 100 then return end
-  if type(_G.UnitHealthMissing) ~= "function" then return end
-
-  local missing = _G.UnitHealthMissing(unitstr)
-  local lostPercent = 100 - cur
-  if not missing or missing <= 0 or lostPercent <= 0 then return end
-
-  local estimatedMax = ceil(missing / lostPercent * 100)
-  if estimatedMax < 100 then return end
-
-  local estimatedCur = estimatedMax - missing
-  if estimatedCur < 0 then estimatedCur = 0 end
-
-  return estimatedCur, estimatedMax, true
-end
-
+-- DIAGNOSED (2026-09-10, reported on Project Legacy, from git history + the
+-- reported symptom -- not yet re-confirmed in-game after this fix): this
+-- used to also try _G.UnitHealthMissing(unitstr) as an "immediate" real-
+-- deficit estimate
+-- before falling back to the historical combat estimator, on the assumption
+-- that ClassicAPI's UnitHealthMissing exposes the true absolute HP deficit
+-- even when stock UnitHealth() only reports a 0-100 percentage. On this
+-- server it doesn't -- it returns the same percentage-based deficit
+-- (100 - cur) that UnitHealth() itself is already restricted to for
+-- ungrouped hostile targets (the server simply never sends real mob HP to
+-- the client, so no client-side API can conjure it up). Feeding that into
+-- the "missing/lostPercent*100" ratio below always landed on
+-- estimatedMax ~= 100 -- i.e. just the raw percent again -- but got
+-- returned with known=true, so the caller (health-numbers.lua) skipped its
+-- own "show it as an honest percent" fallback and displayed the bare
+-- percent NUMBER with no "%" sign, looking like a broken/truncated value.
+-- Removed entirely -- the historical combat-sample estimator (GetCachedHealth
+-- below, unchanged since before this regression) is the only source of a
+-- real absolute-HP guess on this server; everything else should honestly
+-- fall through to the caller's percent display.
 function libhealth:GetUnitHealth(unitstr)
   -- Preserve the old public library behavior for external consumers while
   -- keeping the estimator lazy: the first actual query activates it.
@@ -110,12 +109,6 @@ function libhealth:GetUnitHealth(unitstr)
   -- Real values are already available: do not estimate.
   if cur > 100 or max > 100 or max < 100 then
     return cur, max, true
-  end
-
-  local missingCur, missingMax, missingKnown =
-    GetMissingHealthEstimate(unitstr, cur, max)
-  if missingKnown then
-    return missingCur, missingMax, true
   end
 
   return GetCachedHealth(unitstr, cur, max)
