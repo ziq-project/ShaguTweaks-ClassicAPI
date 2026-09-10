@@ -80,7 +80,7 @@ module.enable = function(self)
   -- keeps the correct Prestige tier visible AND keeps the border
   -- proportioned for the taller bar, whenever that texture gets (re)applied.
   -- Not yet confirmed in-game -- please test and report back.
-  local ourPlayerTextures = { [normalTexture]=true, [eliteTexture]=true, [rareTexture]=true }
+  local ourTextures = { [normalTexture]=true, [eliteTexture]=true, [rareTexture]=true }
 
   local function ClassifyBorderPath(path)
     if not path then return nil end
@@ -91,17 +91,30 @@ module.enable = function(self)
     return nil
   end
 
-  local applyingPlayerTexture = false
-  local function ReplacePlayerBorder(_, path)
-    if applyingPlayerTexture or ourPlayerTextures[path] then return end
-    local replacement = ClassifyBorderPath(path)
-    if not replacement or replacement == path then return end
-    applyingPlayerTexture = true
-    PlayerFrameTexture:SetTexture(replacement)
-    applyingPlayerTexture = false
+  -- Same substitution, reused for both PlayerFrameTexture and
+  -- TargetFrameTexture -- see the note above and the one on
+  -- UpdateTargetClassificationTexture below (2026-09-10, round 3): Prestige
+  -- apparently isn't limited to the player's OWN frame -- targeting another
+  -- player who has a Prestige rank looked just as broken as the player frame
+  -- did before this same fix, while NPC targets were already fine. So the
+  -- TargetFrameTexture needs the identical hook.
+  local function MakeBorderReplacer(frameTexture)
+    local applying = false
+    return function(_, path)
+      if applying or ourTextures[path] then return end
+      local replacement = ClassifyBorderPath(path)
+      if not replacement or replacement == path then return end
+      applying = true
+      frameTexture:SetTexture(replacement)
+      applying = false
+    end
   end
 
+  local ReplacePlayerBorder = MakeBorderReplacer(PlayerFrameTexture)
+  local ReplaceTargetBorder = MakeBorderReplacer(TargetFrameTexture)
+
   hooksecurefunc(PlayerFrameTexture, "SetTexture", ReplacePlayerBorder)
+  hooksecurefunc(TargetFrameTexture, "SetTexture", ReplaceTargetBorder)
   -- Apply once immediately too, in case Prestige (or the stock default) has
   -- already set the border before this module got enabled.
   ReplacePlayerBorder(nil, PlayerFrameTexture:GetTexture())
@@ -132,6 +145,25 @@ module.enable = function(self)
     this:Hide()
 
     local function UpdateTargetClassificationTexture()
+      -- (2026-09-10, round 3): reported broken specifically when targeting
+      -- players (self or others), while NPC targets were already fine.
+      -- UnitClassification is a mob-only concept -- it's always "normal" for
+      -- a player -- so this used to force TargetFrameTexture back to
+      -- normalTexture on every single TargetFrame_CheckClassification firing,
+      -- which happens for player targets too. If Project Legacy's Prestige
+      -- system also marks OTHER players' target frames with a rare/elite
+      -- border (matching what it already does to the player's own frame --
+      -- see the PlayerFrameTexture note above), that unconditional reset
+      -- wiped it out immediately. Leave whatever's already on the frame
+      -- alone for player targets -- ReplaceTargetBorder (hooked above) still
+      -- reshapes it to our tall-bar-fitted asset if Prestige (or anything
+      -- else) sets it to a recognizable stock border path, without this
+      -- classification logic fighting over which tier to show.
+      if UnitIsPlayer("target") then
+        ApplyDarkModeTextures()
+        return
+      end
+
       local classification = UnitClassification("target")
       if classification == "worldboss"
         or classification == "rareelite"
