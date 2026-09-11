@@ -1,10 +1,10 @@
 # 🧩 ShaguTweaks — ClassicAPI
 
-A lightweight fork of [ShaguTweaks](https://github.com/shagu/ShaguTweaks) for **Turtle WoW-like servers**.
+A lightweight fork of [ShaguTweaks](https://github.com/shagu/ShaguTweaks) for the **Project Legacy Server**.
 
 Focused on **stability, compatibility and performance** while keeping the original ShaguTweaks experience.
 
-> This fork requires ClassicAPI and targets **Turtle WoW-like server/client environments**.
+> This fork requires ClassicAPI and targets **Project Legacy Server server/client environments**.
 
 ## 🔌 Requirements
 
